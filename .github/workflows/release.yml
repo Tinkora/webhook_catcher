@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: release-${{ github.repository }}-${{ github.ref_name }}
@@ -23,6 +24,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Validate tag and metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]
@@ -30,6 +33,17 @@ jobs:
           [[ "${RELEASE_TAG}" == "v${version}" ]]
           grep -Fq "## [${version}]" CHANGELOG.md
           [[ "$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")" == "${GITHUB_SHA}" ]]
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main
+          for attempt in {1..40}; do
+            conclusion="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&branch=main&event=push&per_page=10" \
+              --jq '[.workflow_runs[] | select(.head_sha == env.GITHUB_SHA and .head_branch == "main" and .event == "push")][0].conclusion // "pending"')"
+            [[ "${conclusion}" == "success" ]] && break
+            [[ "${conclusion}" != "failure" && "${conclusion}" != "cancelled" && "${conclusion}" != "timed_out" ]] || exit 1
+            [[ "${attempt}" -lt 40 ]] || exit 1
+            sleep 15
+          done
 
   build:
     needs: validate
@@ -40,22 +54,22 @@ jobs:
           - runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             platform: linux-x86_64
-            binary: mcp-timeout-guard
+            binary: webhook-catcher
             archive: tar.gz
           - runner: macos-15
             target: aarch64-apple-darwin
             platform: macos-arm64
-            binary: mcp-timeout-guard
+            binary: webhook-catcher
             archive: tar.gz
           - runner: macos-15
             target: x86_64-apple-darwin
             platform: macos-x86_64
-            binary: mcp-timeout-guard
+            binary: webhook-catcher
             archive: tar.gz
           - runner: windows-2025
             target: x86_64-pc-windows-msvc
             platform: windows-x86_64
-            binary: mcp-timeout-guard.exe
+            binary: webhook-catcher.exe
             archive: zip
     runs-on: ${{ matrix.runner }}
     steps:
@@ -77,7 +91,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          asset="mcp-timeout-guard-${RELEASE_TAG}-${{ matrix.platform }}"
+          asset="webhook-catcher-${RELEASE_TAG}-${{ matrix.platform }}"
           mkdir -p "staging/${asset}" dist
           cp "target/${{ matrix.target }}/release/${{ matrix.binary }}" "staging/${asset}/"
           cp LICENSE README.md README.zh-CN.md CHANGELOG.md "staging/${asset}/"
@@ -88,7 +102,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $asset = "mcp-timeout-guard-${env:RELEASE_TAG}-${{ matrix.platform }}"
+          $asset = "webhook-catcher-${env:RELEASE_TAG}-${{ matrix.platform }}"
           $dir = "staging/$asset"
           New-Item -ItemType Directory -Path $dir, dist -Force | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/${{ matrix.binary }}" $dir
@@ -115,8 +129,8 @@ jobs:
           cargo +1.95.0 install cargo-cyclonedx --version 0.5.9 --locked
           cargo +1.95.0 cyclonedx --format json --describe crate --target all --spec-version 1.5
           mkdir -p dist
-          cp mcp-timeout-guard.cdx.json "dist/mcp-timeout-guard-${RELEASE_TAG}.cdx.json"
-          (cd dist && sha256sum "mcp-timeout-guard-${RELEASE_TAG}.cdx.json" > "mcp-timeout-guard-${RELEASE_TAG}.cdx.json.sha256")
+          cp webhook-catcher.cdx.json "dist/webhook-catcher-${RELEASE_TAG}.cdx.json"
+          (cd dist && sha256sum "webhook-catcher-${RELEASE_TAG}.cdx.json" > "webhook-catcher-${RELEASE_TAG}.cdx.json.sha256")
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-sbom
@@ -135,7 +149,13 @@ jobs:
         run: |
           set -euo pipefail
           (cd release-assets && sha256sum --check --strict -- ./*.sha256)
-          test "$(find release-assets -maxdepth 1 -type f | wc -l | tr -d ' ')" = 10
+          (
+            cd release-assets
+            find . -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.cdx.json' \) \
+              -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+            sha256sum --check --strict SHA256SUMS
+          )
+          test "$(find release-assets -maxdepth 1 -type f | wc -l | tr -d ' ')" = 11
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: verified-release-assets
@@ -165,12 +185,13 @@ jobs:
           subject-path: |
             release-assets/*.tar.gz
             release-assets/*.zip
-          sbom-path: release-assets/mcp-timeout-guard-${{ env.RELEASE_TAG }}.cdx.json
+          sbom-path: release-assets/webhook-catcher-${{ env.RELEASE_TAG }}.cdx.json
 
   publish:
     needs: [verify, attest]
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
+    environment: release
     permissions:
       contents: write
     steps:
@@ -181,4 +202,9 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${RELEASE_TAG}" release-assets/* --repo "${GITHUB_REPOSITORY}" --verify-tag --title "MCP Timeout Guard ${RELEASE_TAG}" --generate-notes --prerelease
+        run: |
+          prerelease=()
+          [[ "${RELEASE_TAG}" == *-* ]] && prerelease+=(--prerelease)
+          gh release create "${RELEASE_TAG}" release-assets/* \
+            --repo "${GITHUB_REPOSITORY}" --verify-tag \
+            --title "Webhook Catcher ${RELEASE_TAG}" --generate-notes "${prerelease[@]}"

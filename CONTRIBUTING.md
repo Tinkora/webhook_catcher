@@ -2,12 +2,11 @@
 
 [简体中文](CONTRIBUTING.zh-CN.md)
 
-## Before opening a pull request
-
-Keep changes focused and preserve the product boundary. Add an outcome-focused
-test before changing protocol or process behavior. Do not add payload logging,
-network access, shell interpolation, retries, or descendant-process claims
-without a documented product decision.
+Keep changes focused on local webhook capture and inspection. Add an
+outcome-focused regression test before changing HTTP framing, storage, or
+deduplication behavior. Do not add public ingress, forwarding, replay,
+signature verification, redaction, or a web UI without an accepted product
+decision.
 
 Run:
 
@@ -19,6 +18,6 @@ cargo deny check advisories bans licenses sources
 cargo audit --no-yanked
 ```
 
-Use English Conventional Commits, for example `fix: preserve numeric request ids`.
-Keep code comments in English and include a changelog entry for user-visible
-behavior.
+Use English Conventional Commits, for example
+`fix: read split webhook request bodies`. Keep code comments in English and
+update the changelog for user-visible behavior.

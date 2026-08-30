@@ -2,11 +2,11 @@
 
 [简体中文](SUPPORT.zh-CN.md)
 
-Use GitHub Issues for reproducible bugs and feature requests that stay within
-the local timeout-proxy boundary. Include the operating system, exact command
-line, timeout flags, and a redacted JSON-RPC frame shape. Never include secrets,
-tokens, private configuration values, or full tool payloads.
+Use GitHub Issues for reproducible bugs and focused feature requests within the
+local capture boundary. Include the operating system, command-line options,
+HTTP version, relevant header names, and redacted body size. Never include real
+tokens, cookies, signatures, private URLs, or full payloads.
 
-For security reports, use the private process described in [SECURITY.md](SECURITY.md).
+For security reports, use the private process in [SECURITY.md](SECURITY.md).
 
 [Support Tinkora on Ko-fi](https://ko-fi.com/tinkora)

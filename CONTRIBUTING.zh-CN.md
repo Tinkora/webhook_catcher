@@ -2,8 +2,9 @@
 
 [English](CONTRIBUTING.md)
 
-请保持改动聚焦并遵守产品边界。修改协议或进程行为前先增加结果导向测试。没有
-产品决策时，不要加入 payload 日志、网络访问、shell 插值、重试或后代进程保证。
+请把改动聚焦在本地 webhook 捕获和检查。修改 HTTP framing、存储或去重行为前，先增加
+结果导向的回归测试。没有被接受的产品决策时，不要增加公网入口、转发、重放、签名验证、
+脱敏或 Web UI。
 
 提交前运行：
 
@@ -15,5 +16,5 @@ cargo deny check advisories bans licenses sources
 cargo audit --no-yanked
 ```
 
-提交信息使用英文 Conventional Commits，代码注释使用英文；用户可见行为需要更新
-变更日志。
+提交信息使用英文 Conventional Commits，例如 `fix: read split webhook request bodies`。
+代码注释使用英文；用户可见行为需要更新变更日志。
